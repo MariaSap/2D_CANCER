@@ -90,7 +90,6 @@ class EMA:
             model.load_state_dict(self.shadow, strict=False)
 
 
-
 def train_gan(train_dl, num_classes=4, z_dim=128, iters=33000, device="cpu"):
     """
     Train a conditional GAN for medical image synthesis.
@@ -120,53 +119,93 @@ def train_gan(train_dl, num_classes=4, z_dim=128, iters=33000, device="cpu"):
     ema = EMA(G, 0.999)  # Track EMA of generator weights
     ema.copy_to(g_ema)   # Initialize EMA generator
     
-
+   
+    # Optimizers with different learning rates (common GAN practice)
+    # Generator uses slower learning rate to prevent overpowering discriminator
     optG = optim.Adam(G.parameters(), lr=1e-4, betas=(0.0, 0.99))
+    # Discriminator uses faster learning rate to stay competitive
     optD = optim.Adam(D.parameters(), lr=2e-4, betas=(0.0, 0.99))
     
     step = 0
-    dl = iter(train_dl)
+    dl = iter(train_dl)  # Create iterator for cycling through data
+
     while step<iters:
+        # Get next batch of real images and labels
         try:
             real, y = next(dl)
         except StopIteration:
+            # Restart iterator when dataset is exhausted
             dl = iter(train_dl)
             real, y = next(dl)
         real, y = real.to(device), y.to(device)
 
-        # D step
+        # === DISCRIMINATOR TRAINING STEP ===
         D.train(); G.train()
-        z = torch.randn(real.size(0), z_dim, device=device)
-        fake = G(z,y)
-        real_aug = diffaugment(real)
-        fake_aug= diffaugment(fake.detach())
-        real_out = D(real_aug.requires_grad_(True),y)
+
+        # Generate fake images for this batch
+        z = torch.randn(real.size(0), z_dim, device=device) # Sample noise
+        fake = G(z,y)  # Generate fake images with same class labels
+
+        # Apply differential augmentation to both real and fake images
+        # This helps prevent discriminator overfitting and improves training stability
+        real_aug = diffaugment(real) 
+        fake_aug= diffaugment(fake.detach()) # Detach to avoid generator gradients
+
+        # Get discriminator predictions
+        real_out = D(real_aug.requires_grad_(True),y)  # Enable gradients for R1 penalty
         fake_out = D(fake_aug, y)
+
+        # Discriminator loss: maximize log(D(real)) + log(1 - D(fake))
+        # Using softplus for numerical stability: -log(sigmoid(x)) = softplus(-x)
         d_loss = (F.softplus(fake_out).mean() + F.softplus(-real_out).mean())
+
+        # Add R1 regularization to prevent discriminator gradients from exploding
         r1 = r1_penalty(real_out, real_aug) * 10.0
+        # Update discriminator
         (d_loss +  r1).backward()
-        optD.step; optD.zero_grad(); G.zero_grad()
+        optD.step()  # Apply gradient updates
+        optD.zero_grad()  # Clear gradients
+        G.zero_grad()     # Clear generator gradients (in case of shared computation)
 
-        # G step
+        # === GENERATOR TRAINING STEP ===
+        # Generate new fake images for generator training
         z = torch.randn(real.size(0), z_dim, device=device)
-        y2 = y # same labels
+        y2 = y # Use same class labels as real images
         fake = G(z, y2)
-        fake_out = D(diffaugment(fake), y2)
-        g_loss = F.softplus(-fake_out).mean()
-        g_loss.backward()
-        optG.step; optG.zero_grad(); D.zero_grad
 
+        # Get discriminator's opinion on generated images
+        fake_out = D(diffaugment(fake), y2)
+
+        # Generator loss: maximize log(D(fake)) to fool discriminator
+        # Equivalent to minimizing -log(D(fake)) = softplus(-fake_out)
+        g_loss = F.softplus(-fake_out).mean()
+        # Update generator
+        g_loss.backward()
+        optG.step()      # Apply gradient updates
+        optG.zero_grad() # Clear generator gradients
+        D.zero_grad()    # Clear discriminator gradients
+        
+        # Update EMA generator with new weights
         ema.update(G); ema.copy_to(g_ema)
 
+
+        # === LOGGING AND CHECKPOINTING ===
         if step % 5000 == 0:
+            # Generate sample images for visual monitoring
             with torch.no_grad():
-                # one grid per class
+                # Create a grid showing samples from each class
                 zs = torch.randn(num_classes*8, z_dim, device=device)
                 ys = torch.arange(num_classes, device=device).repeat_interleave(8)
                 samples = g_ema(zs, ys)
+                # Arrange samples in a grid (8 samples per class)
                 grid = make_grid(samples, nrow=8, normalize=True, value_range=(-1,1))
                 save_image(grid, f"logs/samples_{step:06d}.png", normalize=False)
-            torch.save({"G": G.state_dict(), "D": D.state_dict(), "EMA": ema.shadow}, f"checkpoints/gan_{step:06d}.pt")
+            # Save model checkpoints for resuming training or inference
+            torch.save({"G": G.state_dict(), # Generator weights
+                        "D": D.state_dict(), # Discriminator weights 
+                        "EMA": ema.shadow},  # EMA generator weights
+                        f"checkpoints/gan_{step:06d}.pt")
         step += 1
 
+    # Return the EMA generator for stable, high-quality image generation
         return g_ema
