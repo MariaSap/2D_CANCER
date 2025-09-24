@@ -90,7 +90,7 @@ class EMA:
             model.load_state_dict(self.shadow, strict=False)
 
 
-def train_gan(train_dl, num_classes=4, z_dim=128, iters=33000, device="cpu"):
+def train_gan(train_dl, num_classes=4, z_dim=128, iters=1000, device="cpu"):
     """
     Train a conditional GAN for medical image synthesis.
     
