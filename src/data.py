@@ -1,12 +1,45 @@
 # Data preprocessing and loading utilities for medical image classification
 # This module handles the preparation of medical cancer images for training and evaluation
-import os, torch
+import os, torch, sys
 from torch.utils.data import DataLoader
 from torchvision import datasets, transforms
 
 # Standard image size for the model - all images will be resized to 256x256 pixels
 # This ensures consistent input dimensions for the neural networks
 IMG_SIZE = 256
+
+def count_classes(data_root):
+    """
+    Count the number of images per class in a folder and print the results.
+
+    Args:
+        data_root (str): Path to the data root (should contain class subdirectories)
+
+    Returns:
+        dict: Mapping from class_name to instance count
+    """
+    class_counts = {}
+    for cls_name in sorted(os.listdir(data_root)):
+        cls_path = os.path.join(data_root, cls_name)
+        if os.path.isdir(cls_path):
+            num_imgs = sum(
+                1
+                for fname in os.listdir(cls_path)
+                if fname.lower().endswith(('.png', '.jpg', '.jpeg', '.bmp', '.tiff', '.gif'))
+            )
+            class_counts[cls_name] = num_imgs
+
+    print(f"Class counts in: {data_root}\n")
+    for cls, count in class_counts.items():
+        print(f"{cls}: {count}")
+
+    if class_counts:
+        min_count = min(class_counts.values())
+        minority = [cls for cls, cnt in class_counts.items() if cnt == min_count]
+        print(f"\nMinority class(es): {', '.join(minority)} with {min_count} instances each.")
+
+    return class_counts
+
 
 def build_transforms(train=True):
     """
@@ -105,3 +138,7 @@ def build_loaders(data_root, batch_size=32, num_workers=4):
     test_dl = DataLoader(test_ds, batch_size=batch_size, shuffle=False, num_workers=num_workers, pin_memory=True)
 
     return train_dl, val_dl, test_dl, train_ds.classes
+
+
+# if __name__ == '__main__':
+    # Get data root from command-line, defaults to 'data/train'

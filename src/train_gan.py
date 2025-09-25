@@ -90,7 +90,7 @@ class EMA:
             model.load_state_dict(self.shadow, strict=False)
 
 
-def train_gan(train_dl, num_classes=4, z_dim=128, iters=1000, device="cpu"):
+def train_gan(train_dl, num_classes=4, z_dim=128, iters=30000, device="cpu"):
     """
     Train a conditional GAN for medical image synthesis.
     
@@ -121,10 +121,10 @@ def train_gan(train_dl, num_classes=4, z_dim=128, iters=1000, device="cpu"):
     
    
     # Optimizers with different learning rates (common GAN practice)
-    # Generator uses slower learning rate to prevent overpowering discriminator
-    optG = optim.Adam(G.parameters(), lr=1e-4, betas=(0.0, 0.99))
-    # Discriminator uses faster learning rate to stay competitive
-    optD = optim.Adam(D.parameters(), lr=2e-4, betas=(0.0, 0.99))
+    # Generator uses faster learning rate to prevent overpowering discriminator
+    optG = optim.Adam(G.parameters(), lr=2e-4, betas=(0.0, 0.99))
+    # Discriminator uses slower learning rate to stay competitive
+    optD = optim.Adam(D.parameters(), lr=1e-4, betas=(0.0, 0.99))
     
     step = 0
     dl = iter(train_dl)  # Create iterator for cycling through data
@@ -208,4 +208,4 @@ def train_gan(train_dl, num_classes=4, z_dim=128, iters=1000, device="cpu"):
         step += 1
 
     # Return the EMA generator for stable, high-quality image generation
-        return g_ema
+    return g_ema
