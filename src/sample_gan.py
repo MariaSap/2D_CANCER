@@ -9,7 +9,7 @@ import os, torch
 from torchvision.utils import save_image
 from gan import Generator
 
-def sample_to_folder(g_ema, out_root, per_class=2000, z_dim=128, num_classes=4, device="cpu"):
+def sample_to_folder(g_ema, out_root, per_class=2000, z_dim=128, num_classes=4, device="cuda"):
     """
     Generate synthetic images from a trained GAN and save them organized by class.
     
@@ -23,7 +23,7 @@ def sample_to_folder(g_ema, out_root, per_class=2000, z_dim=128, num_classes=4, 
         per_class (int): Number of synthetic images to generate per class (default: 2000)
         z_dim (int): Dimension of the noise vector input (latent space dimension)
         num_classes (int): Number of different cancer types/classes to generate
-        device (str): Computing device ('cuda' or 'cpu')
+        device (str): Computing device ('cuda' or 'cuda')
     """
     # Create the output directory if it doesn't exist    
     os.makedirs(out_root, exist_ok=True)
@@ -218,7 +218,7 @@ def sample_to_folder(g_ema, out_root, per_class=2000, z_dim=128, num_classes=4, 
 #         data_root (str): Root directory with existing real images (for analysis)
 #         z_dim (int): Dimension of the noise vector input
 #         num_classes (int): Number of different cancer types/classes
-#         device (str): Computing device ('cuda' or 'cpu')
+#         device (str): Computing device ('cuda' or 'cuda')
 #         balance_strategy (str): How to balance classes ('max', 'mean', 'median')
 #         target_count (int, optional): Specific target count per class
 #     """

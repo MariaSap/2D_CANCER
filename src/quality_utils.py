@@ -12,7 +12,7 @@ from scipy import linalg
 import glob
 import shutil
 
-def load_inception_model(device='cpu'):
+def load_inception_model(device='cuda'):
     """
     Load pre-trained Inception-v3 model for feature extraction.
     Used for calculating FID (Fréchet Inception Distance) scores.
@@ -22,7 +22,7 @@ def load_inception_model(device='cpu'):
     model.to(device)
     return model
 
-def extract_inception_features(images, model, device='cpu'):
+def extract_inception_features(images, model, device='cuda'):
     """
     Extract features from images using Inception-v3 model.
     
@@ -51,7 +51,7 @@ def extract_inception_features(images, model, device='cpu'):
         if isinstance(features, tuple):
             features = features[0]
         
-        return features.cpu().numpy()
+        return features.cuda().numpy()
 
 def calculate_fid_score(real_features, fake_features):
     """
@@ -79,7 +79,7 @@ def calculate_fid_score(real_features, fake_features):
     fid = diff.dot(diff) + np.trace(sigma1) + np.trace(sigma2) - 2 * np.trace(covmean)
     return fid
 
-def evaluate_synthetic_quality(real_dir, synthetic_dir, device='cpu', batch_size=32):
+def evaluate_synthetic_quality(real_dir, synthetic_dir, device='cuda', batch_size=32):
     """
     Evaluate the quality of synthetic images compared to real images using FID.
     

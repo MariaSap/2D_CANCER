@@ -90,7 +90,7 @@ class EMA:
             model.load_state_dict(self.shadow, strict=False)
 
 
-def train_gan(train_dl, num_classes=4, z_dim=128, iters=30000, device="cpu"):
+def train_gan(train_dl, num_classes=4, z_dim=128, iters=30000, device="cuda"):
     """
     Train a conditional GAN for medical image synthesis.
     
@@ -110,7 +110,7 @@ def train_gan(train_dl, num_classes=4, z_dim=128, iters=30000, device="cpu"):
     """
 
     # Initialize networks
-    # Generator: Creates fake images from noise + class label
+    # Generator: Creates fake images from noise + class to)
     G = Generator(z_dim=z_dim, num_classes=num_classes).to(device)
     # Discriminator: Distinguishes real from fake images (class-conditional)
     D = Discriminator(num_classes=num_classes).to(device)
@@ -130,6 +130,7 @@ def train_gan(train_dl, num_classes=4, z_dim=128, iters=30000, device="cpu"):
     dl = iter(train_dl)  # Create iterator for cycling through data
 
     while step<iters:
+        print(step)
         # Get next batch of real images and labels
         try:
             real, y = next(dl)
@@ -138,6 +139,7 @@ def train_gan(train_dl, num_classes=4, z_dim=128, iters=30000, device="cpu"):
             dl = iter(train_dl)
             real, y = next(dl)
         real, y = real.to(device), y.to(device)
+        assert real.is_cuda and y.is_cuda, "Batch not on GPU"
 
         # === DISCRIMINATOR TRAINING STEP ===
         D.train(); G.train()

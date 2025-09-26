@@ -36,11 +36,11 @@ def main():
     train_dl, val_dl, test_dl, classes = build_loaders(DATA_ROOT, batch_size=32)
     
     # Create classifier architecture adapted for medical images
-    clf = make_classifier(num_classes=len(classes))
+    clf = make_classifier(num_classes=len(classes), device="cuda")
     
     # Train baseline classifier using only real medical images
     # This typically suffers from limited data, especially for rare cancer types
-    clf = train_classifier(clf, train_dl, val_dl, epochs=50, lr=1e-3, device="cpu")
+    clf = train_classifier(clf, train_dl, val_dl, epochs=50, lr=1e-3, device="cuda")
     
     # === STEP 2: GAN TRAINING ===
     # Train a conditional GAN to learn the distribution of real medical images
@@ -49,7 +49,7 @@ def main():
     
     # Train GAN using the same real training data
     # Returns EMA generator for stable, high-quality synthetic image generation
-    g_ema = train_gan(train_dl, num_classes=len(classes), iters=95000, device="cpu")
+    g_ema = train_gan(train_dl, num_classes=len(classes), iters=5000, device="cuda")
 
     # === STEP 3: SYNTHETIC DATA GENERATION ===
     # Generate synthetic medical images to augment the training dataset
@@ -62,7 +62,7 @@ def main():
     
     # Generate balanced synthetic dataset: 1000 images per cancer type
     # This ensures each class has sufficient representation for training
-    sample_to_folder(g_ema, SYNTH_ROOT, per_class=1000, num_classes=len(classes), device="cpu")
+    sample_to_folder(g_ema, SYNTH_ROOT, per_class=1000, num_classes=len(classes), device="cuda")
 
 
     # === NEW STEP 3.5: QUALITY FILTERING ===
@@ -95,11 +95,11 @@ def main():
     print("Step 5: Training classifier on augmented data...")
     
     # Create fresh classifier with same architecture as baseline
-    clf_aug = make_classifier(num_classes=len(classes))
+    clf_aug = make_classifier(num_classes=len(classes), device="cuda")
     
     # Train on merged dataset: real images + GAN-generated synthetic images
     # Uses same validation set for fair comparison with baseline
-    clf_aug = train_classifier(clf_aug, merged_dl, val_dl, epochs=20, lr=1e-3, device="cpu")
+    clf_aug = train_classifier(clf_aug, merged_dl, val_dl, epochs=100, lr=1e-3, device="cuda")
 
     # === STEP 6: PERFORMANCE EVALUATION ===  
     # Compare baseline vs. augmented classifier performance on same test set
@@ -119,7 +119,7 @@ def main():
             float: Classification accuracy (0.0 to 1.0)
         """
         model.eval()  # Set to evaluation mode (disable dropout, etc.)
-        device = "cpu"
+        device = "cuda"
         correct, total = 0, 0
         
         # Disable gradient computation for evaluation (saves memory)
@@ -152,4 +152,8 @@ def main():
 
 if __name__ == "__main__":
     # Execute the complete pipeline when script is run directly
+    assert torch.cuda.is_available(), "CUDA is not available – aborting"
+    device = torch.device("cuda")
+    print(f"Using device: {torch.cuda.get_device_name(device)}")
     main()
+

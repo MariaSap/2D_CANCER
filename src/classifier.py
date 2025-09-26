@@ -4,7 +4,7 @@
 import torch, torch.nn as nn, torch.optim as optim
 from torchvision import models
 
-def make_classifier(num_classes=4):
+def make_classifier(num_classes=4, device="cuda"):
     """
     Create a ResNet-18 based classifier adapted for medical image classification.
     
@@ -20,6 +20,7 @@ def make_classifier(num_classes=4):
     # Load ResNet-18 architecture without pre-trained weights
     # We start from scratch since medical images differ significantly from ImageNet
     model = models.resnet50(weights=None)
+    model = model.to(device)
     
     # Modify first convolutional layer for single-channel (grayscale) input
     # Original ResNet expects 3-channel RGB images, but medical images are often grayscale
@@ -42,7 +43,7 @@ def make_classifier(num_classes=4):
     return model
 
 
-def train_classifier(model, train_dl, val_dl, epochs=25, lr=1e-3, device="cpu"):
+def train_classifier(model, train_dl, val_dl, epochs=25, lr=1e-3, device="cuda"):
     """
     Train the classifier using standard supervised learning with early stopping based on validation accuracy.
     
@@ -55,7 +56,7 @@ def train_classifier(model, train_dl, val_dl, epochs=25, lr=1e-3, device="cpu"):
         val_dl: DataLoader for validation data without augmentation  
         epochs (int): Maximum number of training epochs
         lr (float): Learning rate for Adam optimizer
-        device (str): Computing device ('cuda' or 'cpu')
+        device (str): Computing device ('cuda' or 'cuda')
         
     Returns:
         torch.nn.Module: The best performing model based on validation accuracy
@@ -77,6 +78,8 @@ def train_classifier(model, train_dl, val_dl, epochs=25, lr=1e-3, device="cpu"):
     
     # Training loop
     for ep in range(epochs):
+        print(f"Epoch {ep} running on {next(model.parameters()).device}")
+
         # Training phase
         model.train()  # Enable dropout and batch normalization training mode
         
@@ -84,6 +87,7 @@ def train_classifier(model, train_dl, val_dl, epochs=25, lr=1e-3, device="cpu"):
         for x, y in train_dl:
             # Move data to device
             x, y = x.to(device), y.to(device)
+            assert x.is_cuda and y.is_cuda, "Batch not on GPU"
             
             # Zero gradients from previous iteration
             opt.zero_grad()
@@ -108,7 +112,7 @@ def train_classifier(model, train_dl, val_dl, epochs=25, lr=1e-3, device="cpu"):
         with torch.no_grad():
             for x, y in val_dl:
                 x, y = x.to(device), y.to(device)
-                
+                assert x.is_cuda and y.is_cuda, "Batch not on GPU"
                 # Get predictions (class with highest probability)
                 pred = model(x).argmax(1)
                 
