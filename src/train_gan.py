@@ -130,7 +130,6 @@ def train_gan(train_dl, num_classes=4, z_dim=128, iters=30000, device="cuda"):
     dl = iter(train_dl)  # Create iterator for cycling through data
 
     while step<iters:
-        print(step)
         # Get next batch of real images and labels
         try:
             real, y = next(dl)

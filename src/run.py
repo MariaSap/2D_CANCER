@@ -7,7 +7,7 @@ from data import build_loaders, count_classes
 from pathlib import Path
 from classifier import make_classifier, train_classifier
 from train_gan import train_gan
-from quality_utils import filter_synthetic_by_quality
+from quality_utils import filter_synthetic_by_quality, assess_class_balance, evaluate_synthetic_quality, save_quality_report_csv
 from sample_gan import sample_to_folder
 from merge_data import merge_real_synth
 
@@ -16,6 +16,10 @@ DATA_ROOT = Path(r"C:data")              # Root directory with train/valid/test 
 SYNTH_ROOT = Path(r"C:data\synth\train")   # Where synthetic images will be saved
 MERGED_ROOT = Path(r"C:data\merged_train") # Where real+synthetic merged data will be stored
 
+EPOCHS=50
+ITERS=5000
+
+# C:\Users\sapounaki.m\Desktop\2D_CANCER\data\train
 def main():
     """
     Execute the complete medical image data augmentation pipeline.
@@ -26,6 +30,7 @@ def main():
     """
 
     count_classes(data_root=os.path.join(DATA_ROOT, "train"))
+    names_of_classes = sorted(os.listdir(os.path.join(DATA_ROOT, "train")))
     
     # === STEP 1: BASELINE CLASSIFIER TRAINING ===
     # Train a classifier on original real medical images only
@@ -38,9 +43,10 @@ def main():
     # Create classifier architecture adapted for medical images
     clf = make_classifier(num_classes=len(classes), device="cuda")
     
+
     # Train baseline classifier using only real medical images
     # This typically suffers from limited data, especially for rare cancer types
-    clf = train_classifier(clf, train_dl, val_dl, epochs=50, lr=1e-3, device="cuda")
+    clf = train_classifier(clf, train_dl, val_dl, epochs=EPOCHS, lr=1e-3, device="cuda")
     
     # === STEP 2: GAN TRAINING ===
     # Train a conditional GAN to learn the distribution of real medical images
@@ -49,7 +55,7 @@ def main():
     
     # Train GAN using the same real training data
     # Returns EMA generator for stable, high-quality synthetic image generation
-    g_ema = train_gan(train_dl, num_classes=len(classes), iters=5000, device="cuda")
+    g_ema = train_gan(train_dl, num_classes=len(classes), iters=ITERS, device="cuda")
 
     # === STEP 3: SYNTHETIC DATA GENERATION ===
     # Generate synthetic medical images to augment the training dataset
@@ -62,12 +68,37 @@ def main():
     
     # Generate balanced synthetic dataset: 1000 images per cancer type
     # This ensures each class has sufficient representation for training
-    sample_to_folder(g_ema, SYNTH_ROOT, per_class=1000, num_classes=len(classes), device="cuda")
+    sample_to_folder(g_ema, SYNTH_ROOT, per_class=1000, num_classes=len(classes), names_of_classes=names_of_classes, device="cuda")
 
 
     # === NEW STEP 3.5: QUALITY FILTERING ===
     print("Step 3.5: Filtering low-quality synthetic images...")
+
+    # Get balance before filtering
+    balance_before = assess_class_balance(SYNTH_ROOT)
+
+    # Execute the complete
     filter_synthetic_by_quality(SYNTH_ROOT, fid_threshold=50.0, real_dir=os.path.join(DATA_ROOT, "train"))
+
+  # Get balance after filtering  
+    balance_after = assess_class_balance(SYNTH_ROOT)
+    
+    # Get quality scores
+    quality_scores = evaluate_synthetic_quality(
+        real_dir=os.path.join(DATA_ROOT, "train"),
+        synthetic_dir=SYNTH_ROOT
+    )
+ 
+    # Save CSV report with balance info
+    csv_file = save_quality_report_csv(
+        quality_scores, 
+        num_of_epch=EPOCHS, 
+        num_of_iters=ITERS,
+        balance_before=balance_before,
+        balance_after=balance_after,
+        output_dir="quality_reports", 
+        run_name="medical_gan_v1"
+    )
 
 
     # === STEP 4: DATA MERGING ===

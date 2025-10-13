@@ -9,7 +9,7 @@ import os, torch
 from torchvision.utils import save_image
 from gan import Generator
 
-def sample_to_folder(g_ema, out_root, per_class=2000, z_dim=128, num_classes=4, device="cuda"):
+def sample_to_folder(g_ema, out_root, per_class=2000, z_dim=128, num_classes=4, names_of_classes=[], device="cuda"):
     """
     Generate synthetic images from a trained GAN and save them organized by class.
     
@@ -31,7 +31,8 @@ def sample_to_folder(g_ema, out_root, per_class=2000, z_dim=128, num_classes=4, 
     # Generate images for each class separately to ensure balanced synthetic dataset
     for c in range(num_classes):
         # Create subdirectory for each class (e.g., benign, malignant, etc.)
-        cls_dir = os.path.join(out_root, str(c))
+        cls_dir = os.path.join(out_root, names_of_classes[c])
+        print(cls_dir)
         os.makedirs(cls_dir, exist_ok=True)
         
         # Counter for tracking number of generated images for this class
@@ -64,6 +65,7 @@ def sample_to_folder(g_ema, out_root, per_class=2000, z_dim=128, num_classes=4, 
             for i in range(bs):
                 # Save with zero-padded filename for consistent ordering (e.g., 000001.png)
                 save_image(x[i], os.path.join(cls_dir, f"{n+i:06d}.png"))
+                print(os.path.join(cls_dir, f"{n+i:06d}.png"))
             
             # Update counter for next batch
             n += bs
