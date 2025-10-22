@@ -204,8 +204,11 @@ def train_gan(train_dl, num_classes=4, z_dim=128, iters=30000, device="cuda"):
             # Save model checkpoints for resuming training or inference
             torch.save({"G": G.state_dict(), # Generator weights
                         "D": D.state_dict(), # Discriminator weights 
-                        "EMA": ema.shadow},  # EMA generator weights
-                        f"checkpoints/gan_{step:06d}.pt")
+                        "EMA": ema.shadow,   # EMA generator weights,
+                        "optG": optG.state_dict(), # Generator optimizer (NEW!)
+                        "optD": optD.state_dict(), # Discriminator optimizer (NEW!)
+                        "step": step               # Iteration counter (NEW!)
+                        }, f"checkpoints/gan_{step:06d}.pt")
         step += 1
 
     # Return the EMA generator for stable, high-quality image generation
