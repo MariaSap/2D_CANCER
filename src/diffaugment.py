@@ -117,8 +117,8 @@ def rand_cutout(x, ratio=0.2):
     
     # Generate random cutout dimensions for this batch
     # Size varies from 0 to ratio*image_size in each dimension
-    cut_h = int(h * ratio * torch.rand(1, device=x.device))
-    cut_w = int(w * ratio * torch.rand(1, device=x.device))
+    cut_h = int(h * ratio * torch.rand(1).item())
+    cut_w = int(w * ratio * torch.rand(1).item())
     
     # Generate random cutout positions for each image in batch
     # Ensure cutout doesn't go outside image boundaries
