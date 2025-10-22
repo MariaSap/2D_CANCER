@@ -16,7 +16,7 @@ DATA_ROOT = Path(r"C:data")              # Root directory with train/valid/test 
 SYNTH_ROOT = Path(r"C:data\synth\train")   # Where synthetic images will be saved
 MERGED_ROOT = Path(r"C:data\merged_train") # Where real+synthetic merged data will be stored
 
-EPOCHS=50
+EPOCHS=100
 ITERS=5000
 
 # C:\Users\sapounaki.m\Desktop\2D_CANCER\data\train
@@ -68,7 +68,7 @@ def main():
     
     # Generate balanced synthetic dataset: 1000 images per cancer type
     # This ensures each class has sufficient representation for training
-    sample_to_folder(g_ema, SYNTH_ROOT, per_class=1000, num_classes=len(classes), names_of_classes=names_of_classes, device="cuda")
+    sample_to_folder(g_ema, SYNTH_ROOT, per_class=100, num_classes=len(classes), names_of_classes=names_of_classes, device="cuda")
 
 
     # === NEW STEP 3.5: QUALITY FILTERING ===
@@ -78,7 +78,7 @@ def main():
     balance_before = assess_class_balance(SYNTH_ROOT)
 
     # Execute the complete
-    filter_synthetic_by_quality(SYNTH_ROOT, fid_threshold=50.0, real_dir=os.path.join(DATA_ROOT, "train"))
+    # filter_synthetic_by_quality(SYNTH_ROOT, fid_threshold=50.0, real_dir=os.path.join(DATA_ROOT, "train"))
 
   # Get balance after filtering  
     balance_after = assess_class_balance(SYNTH_ROOT)
