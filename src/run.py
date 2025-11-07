@@ -17,8 +17,8 @@ DATA_ROOT = Path(r"C:data")              # Root directory with train/valid/test 
 SYNTH_ROOT = Path(r"C:data\synth\train")   # Where synthetic images will be saved
 MERGED_ROOT = Path(r"C:data\merged_train") # Where real+synthetic merged data will be stored
 
-EPOCHS = 100
-ITERS = 20000
+EPOCHS = 120
+ITERS = 40000
 DEVICE = "cuda"
 z_dim = 128
 
@@ -59,8 +59,12 @@ def main():
     
     # Train GAN using the same real training data
     # Returns EMA generator for stable, high-quality synthetic image generation
+    # When training from scratch run, g_ema = train_gan(train_dl, num_classes=4, iters=20000, device=DEVICE)
+    # When resuming from checkpoint, use g_ema = train_gan(train_dl, num_classes=4, iters=40000, device=DEVICE, checkpoint_path="checkpoints/gan_020000.pt")   checkpoint_path="checkpoints/gan_020000.pt")
 
-    g_ema = train_gan(train_dl, num_classes=len(classes), iters=ITERS, device=DEVICE)
+    g_ema = train_gan(train_dl, num_classes=4, iters=ITERS,  save_interval=1000, device=DEVICE, checkpoint_path="checkpoints/gan_014900.pt") 
+    print("Resuming from checkpoint...")
+    # g_ema = train_gan(train_dl, num_classes=len(classes), save_interval=1, iters=ITERS, device=DEVICE)
 
     # === STEP 3: SYNTHETIC DATA GENERATION ===
     # Generate synthetic medical images to augment the training dataset
