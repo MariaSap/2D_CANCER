@@ -191,7 +191,7 @@ def train_gan(train_dl, num_classes=4, z_dim=128, iters=30000, device="cuda"):
 
 
         # === LOGGING AND CHECKPOINTING ===
-        if step % 5000 == 0:
+        if step % 1000 == 0:
             # Generate sample images for visual monitoring
             with torch.no_grad():
                 # Create a grid showing samples from each class
@@ -205,9 +205,9 @@ def train_gan(train_dl, num_classes=4, z_dim=128, iters=30000, device="cuda"):
             torch.save({"G": G.state_dict(), # Generator weights
                         "D": D.state_dict(), # Discriminator weights 
                         "EMA": ema.shadow,   # EMA generator weights,
-                        "optG": optG.state_dict(), # Generator optimizer (NEW!)
-                        "optD": optD.state_dict(), # Discriminator optimizer (NEW!)
-                        "step": step               # Iteration counter (NEW!)
+                        "optG": optG.state_dict(), # Generator optimizer
+                        "optD": optD.state_dict(), # Discriminator optimizer
+                        "step": step               # Iteration counter
                         }, f"checkpoints/gan_{step:06d}.pt")
         step += 1
 

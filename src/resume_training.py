@@ -1,5 +1,4 @@
-# Create the complete resume training script - fixing indentation
-
+# Create the complete resume training script
 
 import os
 import torch
@@ -14,6 +13,45 @@ from data import build_loaders
 from train_gan import r1_penalty, EMA
 from gan import Generator, Discriminator
 from diffaugment import diffaugment
+
+
+def load_generator_from_checkpoint(checkpoint_path, num_classes=4, z_dim=128, device="cuda"):
+    """
+    Load the EMA generator from a checkpoint for inference.
+    
+    Args:
+        checkpoint_path (str): Path to checkpoint.pt file
+        num_classes (int): Number of classes (must match training)
+        z_dim (int): Latent dimension (must match training)
+        device (str): Device to load model on
+        
+    Returns:
+        Generator: The loaded EMA generator ready for inference
+    """
+    device = torch.device(device)
+    
+    # Create generator with same architecture as training
+    g_ema = Generator(z_dim=z_dim, num_classes=num_classes).to(device)
+    
+    # Load checkpoint
+    print(f"Loading checkpoint from: {checkpoint_path}")
+    checkpoint = torch.load(checkpoint_path, map_location=device)
+    
+    # Load EMA weights (preferred for best quality)
+    if "EMA" in checkpoint:
+        g_ema.load_state_dict(checkpoint["EMA"], strict=False)
+        print("✓ EMA generator loaded successfully")
+    elif "G" in checkpoint:
+        # Fallback to regular generator if EMA not available
+        g_ema.load_state_dict(checkpoint["G"])
+        print("⚠ EMA not found, loaded regular generator weights")
+    else:
+        raise ValueError("Checkpoint does not contain 'G' or 'EMA' keys!")
+    
+    # Set to evaluation mode
+    g_ema.eval()
+    
+    return g_ema
 
 
 def resume_train_gan(
@@ -176,7 +214,7 @@ def resume_train_gan(
         ema.copy_to(g_ema)
         
         # ===== LOGGING AND CHECKPOINTING =====
-        if step % 3000 == 0:
+        if step % 1000 == 0:
             print(f"Iter {step:6d} | D_loss: {d_loss.item():.4f} | G_loss: {g_loss.item():.4f} | R1: {r1.item():.4f}")
         
         if step % save_interval == 0:
@@ -219,7 +257,7 @@ if __name__ == "__main__":
     
     # Configuration
     DATA_ROOT = Path(r"C:data")  # Adjust this to your data path
-    CHECKPOINT_PATH = Path(r"C:\Users\sapounaki.m\Desktop\2D_CANCER\checkpoints\Resumegan_000100.pt")   # Path to your checkpoint file
+    CHECKPOINT_PATH = Path(r"C:\Users\sapounaki.m\Desktop\2D_CANCER\checkpoints\Resumegan_014900.pt")   # Path to your checkpoint file
     
     # Check if checkpoint exists
     if not os.path.exists(CHECKPOINT_PATH):
