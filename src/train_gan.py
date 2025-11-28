@@ -198,7 +198,7 @@ def train_gan(
     G.train()
     D.train()
 
-    print("G.train()    D.train()")
+
     
     while step < iters:
         # Get next batch
@@ -228,7 +228,7 @@ def train_gan(
         
         # R1 regularization
         r1 = r1_penalty(real_out, real_aug) * 10.0
-        print("r1_penalty")
+       
         # Update discriminator
         (d_loss + r1).backward()
         optD.step()
@@ -239,7 +239,7 @@ def train_gan(
         z = torch.randn(real.size(0), z_dim, device=device)
         fake = G(z, y)
         fake_out = D(diffaugment(fake), y)
-        print("fake_out")
+       
         # Generator loss
         g_loss = F.softplus(-fake_out).mean()
         
@@ -252,7 +252,7 @@ def train_gan(
         # Update EMA
         ema.update(G)
         ema.copy_to(g_ema)
-        print("EMA update")
+       
         
         # ===== LOGGING AND CHECKPOINTING =====
         if step % 1000 == 0:

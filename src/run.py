@@ -62,7 +62,7 @@ def main():
     # When training from scratch run, g_ema = train_gan(train_dl, num_classes=4, iters=20000, device=DEVICE)
     # When resuming from checkpoint, use g_ema = train_gan(train_dl, num_classes=4, iters=40000, device=DEVICE, checkpoint_path="checkpoints/gan_020000.pt")   checkpoint_path="checkpoints/gan_020000.pt")
 
-    g_ema = train_gan(train_dl, num_classes=4, iters=ITERS,  save_interval=1000, device=DEVICE, checkpoint_path="checkpoints/gan_014900.pt") 
+    g_ema = train_gan(train_dl, num_classes=4, iters=ITERS,  save_interval=1000, device=DEVICE, checkpoint_path="checkpoints/gan_038000.pt") 
     print("Resuming from checkpoint...")
     # g_ema = train_gan(train_dl, num_classes=len(classes), save_interval=1, iters=ITERS, device=DEVICE)
 

@@ -81,7 +81,7 @@ def generate_samples(g_ema, num_classes=4, z_dim=128, device="cuda"):
 
 if __name__ == "__main__":
     # Configuration
-    CHECKPOINT_PATH = Path(r"C:\Users\sapounaki.m\Desktop\2D_CANCER\checkpoints\Resumegan_014900.pt")   # Path to your checkpoint file
+    CHECKPOINT_PATH = Path(r"C:\Users\sapounaki.m\Desktop\2D_CANCER\checkpoints\gan_039000.pt")   # Path to your checkpoint file
     NUM_CLASSES = 4  
     Z_DIM = 128
     DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
@@ -114,7 +114,7 @@ if __name__ == "__main__":
     # Get class names from your data
     DATA_ROOT = Path(r"C:data/train")
     names_of_classes = sorted(os.listdir(DATA_ROOT))
-    SYNTH_ROOT = Path(r"C:data/Inference_synthetic_images")
+    SYNTH_ROOT = Path(r"C:data/inference_medical")
     
     # Generate synthetic images
     sample_to_folder(
