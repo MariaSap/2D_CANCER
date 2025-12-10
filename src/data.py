@@ -1,144 +1,119 @@
-# Data preprocessing and loading utilities for medical image classification
-# This module handles the preparation of medical cancer images for training and evaluation
-import os, torch, sys
-from torch.utils.data import DataLoader
+import os
+import torch
+from torch.utils.data import DataLoader, WeightedRandomSampler
 from torchvision import datasets, transforms
+import numpy as np
 
-# Standard image size for the model - all images will be resized to 256x256 pixels
-# This ensures consistent input dimensions for the neural networks
 IMG_SIZE = 256
 
-def count_classes(data_root):
-    """
-    Count the number of images per class in a folder and print the results.
-
-    Args:
-        data_root (str): Path to the data root (should contain class subdirectories)
-
-    Returns:
-        dict: Mapping from class_name to instance count
-    """
+def count_classes(dataroot):
+    """Count the number of images per class in a folder and print the results."""
     class_counts = {}
-    for cls_name in sorted(os.listdir(data_root)):
-        cls_path = os.path.join(data_root, cls_name)
-        if os.path.isdir(cls_path):
-            num_imgs = sum(
-                1
-                for fname in os.listdir(cls_path)
-                if fname.lower().endswith(('.png', '.jpg', '.jpeg', '.bmp', '.tiff', '.gif'))
-            )
-            class_counts[cls_name] = num_imgs
-
-    print(f"Class counts in: {data_root}\n")
-    for cls, count in class_counts.items():
-        print(f"{cls}: {count}")
-
+    for clsname in sorted(os.listdir(dataroot)):
+        clspath = os.path.join(dataroot, clsname)
+        if os.path.isdir(clspath):
+            num_imgs = sum(1 for fname in os.listdir(clspath) 
+                          if fname.lower().endswith(('.png', '.jpg', '.jpeg', '.bmp', '.tiff', '.gif')))
+            class_counts[clsname] = num_imgs
+    
     if class_counts:
+        print(f"\nClass counts in {dataroot}:")
+        for cls, count in class_counts.items():
+            print(f"  {cls}: {count}")
         min_count = min(class_counts.values())
         minority = [cls for cls, cnt in class_counts.items() if cnt == min_count]
-        print(f"\nMinority class(es): {', '.join(minority)} with {min_count} instances each.")
-
+        print(f"  Minority classes: {', '.join(minority)} with {min_count} instances each.")
+    
     return class_counts
-
 
 def build_transforms(train=True):
     """
     Build image transformation pipelines for training and evaluation.
     
-    Args:
-        train (bool): If True, applies data augmentation for training.
-                      If False, applies minimal transforms for validation/testing.
-    
-    Returns:
-        torchvision.transforms.Compose: Composed transformation pipeline
+    CRITICAL: Uses CONSISTENT [-1, 1] normalization to match generator output.
     """
-    # Normalize pixel values to [-1, 1] range (standard for GANs)
-    # Mean=0.5, std=0.5 maps [0,1] to [-1,1]: (x - 0.5) / 0.5 = 2x - 1
-    norm = transforms.Normalize(mean=[0.5], std=[0.5])
+    # CONSISTENT normalization: [0, 1] → [-1, 1]
+    # Formula: x' = (x - 0.5) / 0.5 = 2x - 1
+    norm = transforms.Normalize(mean=0.5, std=0.5)
+    
     if train:
-        # Training transforms include data augmentation to improve model generalization
         aug = transforms.Compose([
-            # Convert to grayscale (medical images are often single-channel)
             transforms.Grayscale(num_output_channels=1),
-            # Resize images to standard size for consistent model input
-            transforms.Resize([IMG_SIZE, IMG_SIZE]),
-            # Random rotation up to 10 degrees - simulates different scanning angles
-            transforms.RandomRotation(degrees=10),
-            # Random affine transformations - simulates patient positioning variations
-            # translate: up to 5% shift in x,y directions
-            # scale: random scaling between 90% and 110%
-            transforms.RandomAffine(degrees=0, translate=(0.05, 0.05), scale=(0.9,1.1)),
-            # Random horizontal flip - increases data diversity (50% probability)
-            transforms.RandomHorizontalFlip(p=0.5),
-            # Slight color variations - simulates different imaging conditions
-            # Small brightness/contrast changes (5%) to improve robustness
-            transforms.ColorJitter(brightness=0.05, contrast=0.05), 
-            # Convert PIL Image to PyTorch tensor [0,1] range
-            transforms.ToTensor(),
-            # Apply normalization to [-1,1] range
-            norm,
-        ])
-
-    else:
-        # Validation/test transforms - no augmentation, only essential preprocessing
-        aug = transforms.Compose([
-            # Convert to grayscale for consistency with training
-            transforms.Grayscale(num_output_channels=1),
-            # Resize to standard size (no random cropping for reproducible results)
             transforms.Resize((IMG_SIZE, IMG_SIZE)),
-            # Convert to tensor
-            transforms.ToTensor(),
-            # Apply same normalization as training
-            norm,
+            transforms.RandomRotation(degrees=10),
+            transforms.RandomAffine(degrees=0, translate=(0.05, 0.05), scale=(0.9, 1.1)),
+            transforms.RandomHorizontalFlip(p=0.5),
+            transforms.ColorJitter(brightness=0.05, contrast=0.05),
+            transforms.ToTensor(),  # [0, 1]
+            norm,  # → [-1, 1]
         ])
-
+    else:
+        aug = transforms.Compose([
+            transforms.Grayscale(num_output_channels=1),
+            transforms.Resize((IMG_SIZE, IMG_SIZE)),
+            transforms.ToTensor(),  # [0, 1]
+            norm,  # → [-1, 1]
+        ])
+    
     return aug
 
-
-def build_loaders(data_root, batch_size=32, num_workers=4):
+def build_loaders(dataroot, batchsize=32, numworkers=4):
     """
     Build PyTorch DataLoaders for training, validation, and testing.
     
-    Args:
-        data_root (str): Root directory containing train/valid/test subdirectories
-        batch_size (int): Number of images per batch (default: 32 for memory efficiency)
-        num_workers (int): Number of parallel workers for data loading (default: 4)
-    
-    Returns:
-        tuple: (train_dl, val_dl, test_dl, classes)
-            - train_dl: DataLoader for training data with augmentation
-            - val_dl: DataLoader for validation data without augmentation  
-            - test_dl: DataLoader for test data without augmentation
-            - classes: List of class names (e.g., cancer types)
+    CRITICAL FIX: Uses WeightedRandomSampler for CLASS BALANCING.
+    This ensures all classes are sampled equally, preventing mode collapse.
     """
-    # Create datasets using ImageFolder - expects directory structure:
-    # data_root/
-    #   ├── train/
-    #   │   ├── class_0/
-    #   │   ├── class_1/
-    #   │   └── ...
-    #   ├── valid/
-    #   └── test/
+    # Training dataset
+    trainds = datasets.ImageFolder(
+        os.path.join(dataroot, 'train'),
+        transform=build_transforms(True)
+    )
     
-    # Training dataset with augmentation transforms
-    train_ds = datasets.ImageFolder(os.path.join(data_root, "train"), transform=build_transforms(True))
+    # ===== CRITICAL: Add class weights for balanced sampling =====
+    class_counts = {}
+    for _, label in trainds.samples:
+        class_counts[label] = class_counts.get(label, 0) + 1
     
-    # Validation dataset without augmentation (for unbiased evaluation during training)
-    val_ds = datasets.ImageFolder(os.path.join(data_root, "valid"), transform=build_transforms(False))
+    print(f"\nClass distribution in training data:")
+    for cls_id, count in sorted(class_counts.items()):
+        print(f"  Class {cls_id}: {count} images")
     
-    # Test dataset without augmentation (for final model evaluation)
-    test_ds = datasets.ImageFolder(os.path.join(data_root, "test"), transform=build_transforms(False))
+    # Inverse weights: rare classes get higher weights
+    # This ensures each class is sampled equally often
+    class_weights = [1.0 / class_counts[label] for _, label in trainds.samples]
+    sampler = WeightedRandomSampler(
+        weights=class_weights,
+        num_samples=len(trainds),
+        replacement=True
+    )
     
-    # Create DataLoaders for efficient batch processing
-    # Training: shuffle=True for better learning, prevents overfitting to data order
-    train_dl = DataLoader(train_ds, batch_size=batch_size, shuffle=True, num_workers=num_workers, pin_memory=True) # pin_memory=True speeds up GPU transfer by using pinned (page-locked) memory
+    print(f"WeightedRandomSampler: balances classes during training")
+    print(f"Each epoch guarantees equal sampling of all {len(class_counts)} classes\n")
     
-    # Validation/Test: shuffle=False for reproducible evaluation results
-    val_dl = DataLoader(val_ds, batch_size=batch_size, shuffle=False, num_workers=num_workers, pin_memory=True)
-    test_dl = DataLoader(test_ds, batch_size=batch_size, shuffle=False, num_workers=num_workers, pin_memory=True)
-
-    return train_dl, val_dl, test_dl, train_ds.classes
-
-
-# if __name__ == '__main__':
-    # Get data root from command-line, defaults to 'data/train'
+    # Use sampler instead of shuffle=True
+    traindl = DataLoader(
+        trainds,
+        batch_size=batchsize,
+        sampler=sampler,  # <-- KEY CHANGE: balanced sampling
+        num_workers=numworkers,
+        pin_memory=True
+    )
+    
+    # Validation dataset (no balancing needed for validation)
+    valds = datasets.ImageFolder(
+        os.path.join(dataroot, 'valid'),
+        transform=build_transforms(False)
+    )
+    valdl = DataLoader(valds, batch_size=batchsize, shuffle=False,
+                       num_workers=numworkers, pin_memory=True)
+    
+    # Test dataset (no balancing needed for test)
+    testds = datasets.ImageFolder(
+        os.path.join(dataroot, 'test'),
+        transform=build_transforms(False)
+    )
+    testdl = DataLoader(testds, batch_size=batchsize, shuffle=False,
+                        num_workers=numworkers, pin_memory=True)
+    
+    return traindl, valdl, testdl, trainds.classes

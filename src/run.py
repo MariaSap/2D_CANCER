@@ -11,14 +11,20 @@ from quality_utils import filter_synthetic_by_quality, assess_class_balance, eva
 from sample_gan import sample_to_folder
 from merge_data import merge_real_synth
 from resume_training import resume_train_gan
+from torchvision import datasets
+from torch.utils.data import DataLoader
+from data import build_transforms
 
 # Data directory paths - adjust these for your specific setup
 DATA_ROOT = Path(r"C:data")              # Root directory with train/valid/test folders
 SYNTH_ROOT = Path(r"C:data\synth\train")   # Where synthetic images will be saved
 MERGED_ROOT = Path(r"C:data\merged_train") # Where real+synthetic merged data will be stored
 
+baseline_ckpt_path = "checkpoints/baseline/baseline_classifier.pt"
+os.makedirs("checkpoints/baseline", exist_ok=True)
+
 EPOCHS = 120
-ITERS = 40000
+ITERS = 32000
 DEVICE = "cuda"
 z_dim = 128
 
@@ -32,7 +38,7 @@ def main():
     augmented dataset performance.
     """
 
-    count_classes(data_root=os.path.join(DATA_ROOT, "train"))
+    count_classes(dataroot=os.path.join(DATA_ROOT, "train"))
     names_of_classes = sorted(os.listdir(os.path.join(DATA_ROOT, "train")))
     
     # === STEP 1: BASELINE CLASSIFIER TRAINING ===
@@ -41,15 +47,23 @@ def main():
     print("Step 1: Training baseline classifier on real data...")
 
     # Load the original medical image datasets with proper transforms
-    train_dl, val_dl, test_dl, classes = build_loaders(DATA_ROOT, batch_size=32)
+    train_dl, val_dl, test_dl, classes = build_loaders(DATA_ROOT, batchsize=32)
     
     # Create classifier architecture adapted for medical images
     clf = make_classifier(num_classes=len(classes), device=DEVICE)
     
 
-    # Train baseline classifier using only real medical images
-    # This typically suffers from limited data, especially for rare cancer types
-    clf = train_classifier(clf, train_dl, val_dl, epochs=EPOCHS, lr=1e-3, device=DEVICE)
+    if os.path.exists(baseline_ckpt_path):
+        print(f"Loading pre-trained baseline classifier from {baseline_ckpt_path}")
+        clf.load_state_dict(torch.load(baseline_ckpt_path))
+
+    else:
+        print("No checkpoint found. Training baseline classifier from scratch...")
+        clf = train_classifier(clf, train_dl, val_dl, epochs=EPOCHS, lr=1e-3, device=DEVICE)
+        
+        # SAVE the trained model
+        torch.save(clf.state_dict(), baseline_ckpt_path)
+        print(f"Saved baseline classifier to {baseline_ckpt_path}")
     
     # === STEP 2: GAN TRAINING ===
     # Train a conditional GAN to learn the distribution of real medical images
@@ -62,9 +76,11 @@ def main():
     # When training from scratch run, g_ema = train_gan(train_dl, num_classes=4, iters=20000, device=DEVICE)
     # When resuming from checkpoint, use g_ema = train_gan(train_dl, num_classes=4, iters=40000, device=DEVICE, checkpoint_path="checkpoints/gan_020000.pt")   checkpoint_path="checkpoints/gan_020000.pt")
 
-    g_ema = train_gan(train_dl, num_classes=4, iters=ITERS,  save_interval=1000, device=DEVICE, checkpoint_path="checkpoints/gan_038000.pt") 
-    print("Resuming from checkpoint...")
-    # g_ema = train_gan(train_dl, num_classes=len(classes), save_interval=1, iters=ITERS, device=DEVICE)
+
+    # print("Resuming from checkpoint...")
+    
+    g_ema = train_gan(train_dl, num_classes=4, iters=ITERS,  save_interval=1000, device=DEVICE, checkpoint_path="checkpoints/gan_013000.pt") 
+    # g_ema = train_gan(train_dl, num_classes=len(classes), z_dim=z_dim, save_interval=500, iters=ITERS, device=DEVICE)
 
     # === STEP 3: SYNTHETIC DATA GENERATION ===
     # Generate synthetic medical images to augment the training dataset
@@ -106,7 +122,7 @@ def main():
         balance_before=balance_before,
         balance_after=balance_after,
         output_dir="quality_reports", 
-        run_name="medical_gan_v1"
+        run_name="medical_gan_v5"
     )
 
 
@@ -120,10 +136,7 @@ def main():
     # Note: We reuse validation/test sets from real-only data to ensure fair comparison
     # Synthetic data is only used for training augmentation
     
-    # Build data loader for the merged (real + synthetic) training dataset
-    from torchvision import datasets
-    from torch.utils.data import DataLoader
-    from data import build_transforms
+
     
     # Create dataset from merged directory with training transforms
     merged_ds = datasets.ImageFolder(MERGED_ROOT, transform=build_transforms(True))
@@ -139,7 +152,7 @@ def main():
     
     # Train on merged dataset: real images + GAN-generated synthetic images
     # Uses same validation set for fair comparison with baseline
-    clf_aug = train_classifier(clf_aug, merged_dl, val_dl, epochs=100, lr=1e-3, device=DEVICE)
+    clf_aug = train_classifier(clf_aug, merged_dl, val_dl, epochs=1, lr=1e-3, device=DEVICE)
 
     # === STEP 6: PERFORMANCE EVALUATION ===  
     # Compare baseline vs. augmented classifier performance on same test set

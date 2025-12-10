@@ -83,7 +83,7 @@ def train_classifier(model, train_dl, val_dl, epochs=25, lr=1e-3, device="cuda")
         # Training phase
         model.train()  # Enable dropout and batch normalization training mode
         
-        # Process training batches
+        # Process training 
         for x, y in train_dl:
             # Move data to device
             x, y = x.to(device), y.to(device)

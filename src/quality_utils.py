@@ -24,6 +24,8 @@ def load_images_from_folder(folder_path, resize_to=STANDARD_IMG_SIZE):
     """
     Load all images from a folder as numpy arrays (grayscale).
     
+    CRITICAL FIX: Normalizes to [-1, 1] to match generator output range.
+    
     Resizes all images to a standard size to handle variable image dimensions.
     
     Args:
@@ -31,7 +33,8 @@ def load_images_from_folder(folder_path, resize_to=STANDARD_IMG_SIZE):
         resize_to: Tuple (height, width) to resize images to. Default (256, 256)
     
     Returns:
-        numpy array of images with shape (N, H, W) or None if no images found
+        numpy array of images with shape (N, H, W) normalized to [-1, 1]
+        or None if no images found
     """
     images = []
     image_paths = glob.glob(os.path.join(folder_path, '*.png')) + \
@@ -45,7 +48,13 @@ def load_images_from_folder(folder_path, resize_to=STANDARD_IMG_SIZE):
             # Resize to standard size to handle variable dimensions
             img = img.resize(resize_to, Image.Resampling.LANCZOS)
             
-            img_array = np.array(img, dtype=np.float32) / 255.0  # Normalize to [0, 1]
+            # Normalize to [0, 1] first
+            img_array = np.array(img, dtype=np.float32) / 255.0
+            
+            # ===== CRITICAL FIX: Convert to [-1, 1] to match generator =====
+            # Formula: x' = (x - 0.5) / 0.5 = 2x - 1
+            img_array = (img_array - 0.5) / 0.5
+            
             images.append(img_array)
         except Exception as e:
             print(f"Error loading image {img_path}: {e}")
@@ -54,7 +63,14 @@ def load_images_from_folder(folder_path, resize_to=STANDARD_IMG_SIZE):
         return None
     
     # Stack into single array - all images now have same shape
-    return np.array(images, dtype=np.float32)
+    result = np.array(images, dtype=np.float32)
+    
+    # Diagnostic output
+    print(f"  Loaded {len(images)} images from {os.path.basename(folder_path)}")
+    print(f"  Range: [{result.min():.4f}, {result.max():.4f}]")
+    
+    return result
+
 
 def calculate_ssim_score(real_images, synthetic_images):
     """
@@ -78,13 +94,14 @@ def calculate_ssim_score(real_images, synthetic_images):
         real_img = real_images[i]
         synth_img = synthetic_images[i]
         
-        # Ensure same shape
+        # Both should have same shape now, but safety check
         if real_img.shape != synth_img.shape:
             synth_img = np.array(Image.fromarray((synth_img * 255).astype(np.uint8)).resize(
-                (real_img.shape[1], real_img.shape[0]))) / 255.0
+                (real_img.shape[1], real_img.shape[0]), Image.Resampling.LANCZOS)) / 255.0
+            synth_img = (synth_img - 0.5) / 0.5
         
-        # Calculate SSIM (data_range=1.0 for normalized [0,1] images)
-        score = ssim(real_img, synth_img, data_range=1.0)
+        # Calculate SSIM (data_range=2.0 for [-1, 1] images)
+        score = ssim(real_img, synth_img, data_range=2.0)
         ssim_scores.append(score)
     
     return np.mean(ssim_scores) if ssim_scores else 0.0
@@ -111,13 +128,14 @@ def calculate_psnr_score(real_images, synthetic_images):
         real_img = real_images[i]
         synth_img = synthetic_images[i]
         
-        # Ensure same shape
+        # Both should have same shape now, but safety check
         if real_img.shape != synth_img.shape:
             synth_img = np.array(Image.fromarray((synth_img * 255).astype(np.uint8)).resize(
-                (real_img.shape[1], real_img.shape[0]))) / 255.0
+                (real_img.shape[1], real_img.shape[0]), Image.Resampling.LANCZOS)) / 255.0
+            synth_img = (synth_img - 0.5) / 0.5
         
-        # Calculate PSNR (data_range=1.0 for normalized [0,1] images)
-        score = psnr(real_img, synth_img, data_range=1.0)
+        # Calculate PSNR (data_range=2.0 for [-1, 1] images)
+        score = psnr(real_img, synth_img, data_range=2.0)
         psnr_scores.append(score)
     
     return np.mean(psnr_scores) if psnr_scores else 0.0
@@ -138,7 +156,9 @@ def evaluate_synthetic_quality(real_dir, synthetic_dir, device='cuda', batch_siz
     Returns:
         dict: Quality metrics including SSIM and PSNR scores per class and overall
     """
+    print("\n" + "=" * 70)
     print("Loading images for quality evaluation...")
+    print("=" * 70)
     
     quality_scores = {}
     classes = sorted(os.listdir(real_dir))
@@ -147,11 +167,14 @@ def evaluate_synthetic_quality(real_dir, synthetic_dir, device='cuda', batch_siz
         real_cls_path = os.path.join(real_dir, cls)
         synth_cls_path = os.path.join(synthetic_dir, cls)
         
+        if not os.path.isdir(real_cls_path):
+            continue
+        
         if not os.path.exists(synth_cls_path):
             print(f"Warning: No synthetic images found for class {cls}")
             continue
         
-        print(f"Evaluating quality for class {cls}...")
+        print(f"\nEvaluating quality for class '{cls}'...")
         
         # Load images
         real_images = load_images_from_folder(real_cls_path)
@@ -176,8 +199,18 @@ def evaluate_synthetic_quality(real_dir, synthetic_dir, device='cuda', batch_siz
             'synth_count': len(synthetic_images)
         }
         
-        print(f"Class {cls}: SSIM={ssim_score:.4f}, PSNR={psnr_score:.2f}dB "
+        print(f"  ✓ SSIM={ssim_score:.4f}, PSNR={psnr_score:.2f}dB "
               f"(Real: {len(real_images)}, Synthetic: {len(synthetic_images)})")
+    
+    print("\n" + "=" * 70)
+    print("Quality Evaluation Summary")
+    print("=" * 70)
+    for cls, scores in quality_scores.items():
+        quality_grade = ('Excellent' if scores['ssim'] > 0.8 
+                        else 'Good' if scores['ssim'] > 0.7
+                        else 'Fair' if scores['ssim'] > 0.6
+                        else 'Poor')
+        print(f"{cls:50s} | SSIM: {scores['ssim']:.4f} | PSNR: {scores['psnr']:.2f}dB | Grade: {quality_grade}")
     
     return quality_scores
 
@@ -195,7 +228,9 @@ def filter_synthetic_by_quality(synth_dir, ssim_threshold=0.5, psnr_threshold=20
     Returns:
         None (modifies synthetic_dir in place)
     """
-    print(f"Filtering synthetic images with SSIM threshold {ssim_threshold} and PSNR threshold {psnr_threshold}dB")
+    print(f"\nFiltering synthetic images...")
+    print(f"  SSIM threshold: {ssim_threshold}")
+    print(f"  PSNR threshold: {psnr_threshold}dB\n")
     
     if real_dir is None:
         print("Warning: No real data provided for quality comparison.")
@@ -244,14 +279,14 @@ def filter_synthetic_by_quality(synth_dir, ssim_threshold=0.5, psnr_threshold=20
                 for img_path in images:
                     os.remove(img_path)
                     removed_count += 1
-                print(f"Removed all {len(images)} images from class {cls} "
+                print(f"❌ Removed all {len(images)} images from class '{cls}' "
                       f"(SSIM={ssim_score:.4f} < {ssim_threshold}, PSNR={psnr_score:.2f}dB < {psnr_threshold}dB)")
             else:
-                print(f"Keeping class {cls} images (SSIM={ssim_score:.4f}, PSNR={psnr_score:.2f}dB)")
+                print(f"✓ Keeping class '{cls}' images (SSIM={ssim_score:.4f}, PSNR={psnr_score:.2f}dB)")
             
             total_count += scores['synth_count']
         
-        print(f"Quality filtering complete: removed {removed_count}/{total_count} images")
+        print(f"\nQuality filtering complete: removed {removed_count}/{total_count} images")
 
 
 def assess_class_balance(data_dir):
@@ -367,7 +402,7 @@ def save_quality_report_csv(quality_scores, num_of_epch=None, num_of_iters=None,
             'SSIM Score': round(np.mean(ssim_scores), 4),
             'PSNR Score (dB)': round(np.mean(psnr_scores), 2),
             'Quality Grade': 'Good' if np.mean(ssim_scores) > 0.7 else 'Fair' if np.mean(ssim_scores) > 0.6 else 'Poor',
-            'Passed Threshold': sum(1 for s in ssim_scores if s > 0.6) / len(ssim_scores),
+            'Passed Threshold': round(sum(1 for s in ssim_scores if s > 0.6) / len(ssim_scores), 2),
             'Real Images': total_real,
             'Synthetic Before Filter': total_synth_before,
             'Synthetic After Filter': total_synth_after,
@@ -404,34 +439,30 @@ def save_quality_report_csv(quality_scores, num_of_epch=None, num_of_iters=None,
     filepath = os.path.join(output_dir, filename)
     df.to_csv(filepath, index=False)
     
-    print(f"Quality report saved to {filepath}")
+    print(f"✓ Quality report saved to {filepath}")
     return filepath
 
 
 # Example usage
 if __name__ == '__main__':
-    DATA_ROOT = Path(r"C:data")  
-    SYNTH_ROOT = Path(r"C:data\synth_2nd\train") 
-    MERGED_ROOT = Path(r"C:data\synth_merged_2nd\train")  
-
     DATA_ROOT = r'C:\data'  # Root directory with train/valid/test folders
-    SYNTH_ROOT = r'C:\data'  # Where synthetic images will be saved
-    MERGED_ROOT = r'C:\data\train'  
+    SYNTH_ROOT = r'C:\Users\sapounaki.m\Desktop\2D_CANCER\data\valid'  # Where synthetic images will be saved
+    REAL_ROOT = r'C:\Users\sapounaki.m\Desktop\2D_CANCER\data\train'
     
-    print("=" * 60)
-    print("SSIM/PSNR-based Medical Image Quality Evaluation")
-    print("=" * 60)
+    print("=" * 70)
+    print("SSIM/PSNR-based Medical Image Quality Evaluation (FIXED)")
+    print("=" * 70)
     
     # Get balance before filtering
-    balance_before = assess_class_balance(os.path.join(DATA_ROOT, 'train'))
+    balance_before = assess_class_balance(REAL_ROOT)
     print("\nBalance before filtering:")
     for cls, count in balance_before.get('class_counts', {}).items():
         print(f"  {cls}: {count} images")
     
     # Evaluate synthetic quality using SSIM and PSNR
     quality_scores = evaluate_synthetic_quality(
-        real_dir=os.path.join(DATA_ROOT, 'train'),
-        synth_dir=SYNTH_ROOT
+        real_dir=REAL_ROOT,
+        synthetic_dir=SYNTH_ROOT
     )
     
     # Filter low-quality synthetic images
@@ -439,7 +470,7 @@ if __name__ == '__main__':
         SYNTH_ROOT,
         ssim_threshold=0.6,
         psnr_threshold=20.0,
-        real_dir=os.path.join(DATA_ROOT, 'train')
+        real_dir=REAL_ROOT
     )
     
     # Get balance after filtering
@@ -450,21 +481,21 @@ if __name__ == '__main__':
     
     # Evaluate again after filtering
     quality_scores = evaluate_synthetic_quality(
-        real_dir=os.path.join(DATA_ROOT, 'train'),
-        synth_dir=SYNTH_ROOT
+        real_dir=REAL_ROOT,
+        synthetic_dir=SYNTH_ROOT
     )
     
     # Save comprehensive report
     csv_file = save_quality_report_csv(
         quality_scores,
         num_of_epch=4,
-        num_of_iters=3,
+        num_of_iters=30000,
         balance_before=balance_before,
         balance_after=balance_after,
         output_dir='quality_reports',
-        run_name='medical_gan_v1'
+        run_name='medical_gan_v1_fixed'
     )
     
-    print("=" * 60)
+    print("\n" + "=" * 70)
     print("Evaluation complete!")
-    print("=" * 60)
+    print("=" * 70)
